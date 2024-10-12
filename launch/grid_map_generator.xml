@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<launch>
+  <node_container pkg="rclcpp_components" exec="component_container" name="grid_map_generator_container" namespace="grid_map_generator" >
+    <composable_node pkg="grid_map_generator" plugin="grid_map_generator::GridMapGenerator" name="grid_map_generator_node" namespace="grid_map_generator">
+      <param from="$(find-pkg-share grid_map_generator)/config/grid_map_config.yaml" />
+    </composable_node>
+  </node_container>
+</launch>

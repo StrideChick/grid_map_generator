@@ -1,0 +1,17 @@
+/**:
+  ros__parameters:
+    resolution : 0.01
+    length_x   : 10.0
+    length_y   : 10.0
+    origin_position_x : -5.0
+    origin_position_y : -5.0
+    origin_position_z : 0.0
+    origin_orientation_w : 1.0
+    origin_orientation_x : 0.0
+    origin_orientation_y : 0.0
+    origin_orientation_z : 0.0
+
+    map_topic_name   : /local_map
+    cloud_topic_name : /lidar_points
+    map_frame        : map
+
