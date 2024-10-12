@@ -4,5 +4,5 @@
 `output` : `OccupancyGrid` (nav_msgs::msg::OccupancyGrid)
 
 ## ToDO
-- [] scan topicへの対応  
-- [] 後処理フィルタの追加
+- [ ] scan topicへの対応  
+- [ ] 後処理フィルタの追加
