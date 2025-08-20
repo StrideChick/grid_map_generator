@@ -1,6 +1,6 @@
 /**:
   ros__parameters:
-    resolution : 0.01
+    resolution : 0.1
     length_x   : 10.0
     length_y   : 10.0
     origin_position_x : -5.0
@@ -12,6 +12,6 @@
     origin_orientation_z : 0.0
 
     map_topic_name   : /local_map
-    cloud_topic_name : /lidar_points
+    cloud_topic_name : /icp_map
     map_frame        : map
 
