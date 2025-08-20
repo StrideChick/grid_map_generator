@@ -3,22 +3,47 @@
 namespace grid_map_generator
 {
 GridMapGenerator::GridMapGenerator(const rclcpp::NodeOptions & node_options)
-: Node("grid_map_generator", node_options)
+: Node("grid_map_generator", node_options), observation_timeout_(5.0)
 { 
   declare_parameter<std::string>("map_topic_name","/local_map");
   declare_parameter<std::string>("cloud_topic_name","/lidar_points");
   declare_parameter<std::string>("map_frame","map");
+  declare_parameter<double>("observation_timeout", 5.0);
+  declare_parameter<double>("update_frequency", 10.0);
+  
   get_parameter("map_topic_name",grid_map_topic);
   get_parameter("cloud_topic_name",point_cloud_topic);
   get_parameter("map_frame",grid_map.map_frame);
+  get_parameter("observation_timeout", observation_timeout_);
+  
+  double update_frequency;
+  get_parameter("update_frequency", update_frequency);
 
   grid_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>(grid_map_topic, 10);
   pc_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
     point_cloud_topic, 10, std::bind(&GridMapGenerator::pc_callback, this, std::placeholders::_1)
   );
+  
+  // Create timer for periodic updates
+  timer_ = this->create_wall_timer(
+    std::chrono::milliseconds(static_cast<int>(1000.0 / update_frequency)),
+    std::bind(&GridMapGenerator::timer_callback, this)
+  );
+  
   setup_grid_map();
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+  
+  // Initialize persistent grid and observation tracking
+  grid_map.initGrid(persistent_grid_);
+  persistent_grid_.header.frame_id = grid_map.map_frame;
+  persistent_grid_.data.resize(grid_map.getSize(), -1);
+  
+  // Initialize observation time tracking
+  last_observed_times_.resize(grid_map.grid_height);
+  for (auto& row : last_observed_times_) {
+    row.resize(grid_map.grid_width, rclcpp::Time(0, 0, RCL_ROS_TIME));
+  }
 }
 
 void GridMapGenerator::setup_grid_map()
@@ -62,25 +87,58 @@ void GridMapGenerator::pc_callback(const sensor_msgs::msg::PointCloud2 & msg)
       return;
   }
   
-  nav_msgs::msg::OccupancyGrid occupancy_grid;
-  grid_map.initGrid(occupancy_grid);
-  occupancy_grid.header.stamp = msg.header.stamp;
-  occupancy_grid.header.frame_id = grid_map.map_frame;
-  occupancy_grid.data.resize(grid_map.getSize(),-1); 
   pcl::PointCloud<pcl::PointXYZI> cloud;
   pcl::fromROSMsg(transformed_cloud, cloud);
+  
+  rclcpp::Time current_time = this->get_clock()->now();
 
+  // Update observation times for each point
   for (const auto& point : cloud) {
     if (point.x >= grid_map.bottomright_x && point.x < grid_map.topleft_x &&
         point.y >= grid_map.bottomright_y && point.y < grid_map.topleft_y
     ){
       int grid_x = static_cast<int>((point.x - grid_map.bottomright_x) / grid_map.grid_resolution);
       int grid_y = static_cast<int>((point.y - grid_map.bottomright_y) / grid_map.grid_resolution);
-      int index = grid_y * grid_map.grid_width + grid_x;
-      occupancy_grid.data[index] = std::min(100,occupancy_grid.data[index]+5); 
+      
+      if (grid_x >= 0 && grid_x < grid_map.grid_width && 
+          grid_y >= 0 && grid_y < grid_map.grid_height) {
+        last_observed_times_[grid_y][grid_x] = current_time;
+      }
     }
   }
-  grid_pub_->publish(occupancy_grid);
+}
+
+void GridMapGenerator::timer_callback()
+{
+  update_occupancy_map();
+  persistent_grid_.header.stamp = this->get_clock()->now();
+  grid_pub_->publish(persistent_grid_);
+}
+
+void GridMapGenerator::update_occupancy_map()
+{
+  rclcpp::Time current_time = this->get_clock()->now();
+  
+  for (int y = 0; y < grid_map.grid_height; ++y) {
+    for (int x = 0; x < grid_map.grid_width; ++x) {
+      int index = y * grid_map.grid_width + x;
+      
+      // Check if this cell has been observed recently
+      rclcpp::Duration time_since_observation = current_time - last_observed_times_[y][x];
+      
+      if (time_since_observation.seconds() <= observation_timeout_ && 
+          last_observed_times_[y][x].seconds() > 0) {
+        // Cell has been observed within the timeout period
+        persistent_grid_.data[index] = 100;  // Set to occupied
+      } else if (last_observed_times_[y][x].seconds() > 0) {
+        // Cell was observed before but not recently
+        persistent_grid_.data[index] = 0;    // Set to free
+      } else {
+        // Cell has never been observed
+        persistent_grid_.data[index] = -1;   // Unknown
+      }
+    }
+  }
 }
 
 }
